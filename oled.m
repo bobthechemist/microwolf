@@ -16,12 +16,13 @@ $welcome = "\[Mu] \[Wolf] 8 \[Sum] \[Pi]";
 $oleddriver = "sudo /home/pi/oled/oled.py";
 $bmpdriver = "/home/pi/oled/readbmp180.py";
 $tempfile = "/tmp/oledwolfram.png";
+$datafile = "/tmp/oleddata";
 $gpio = {14, 15, 18};
 $flags = ConstantArray[1,Length@$gpio]; 
 $readpins = True;
 $shellprocess = Null;
 $task = Null;
-
+$datatask = Null;
 
 (* Read gpio pins and store in $flags *)
 
@@ -53,6 +54,10 @@ oledSetup[] := Module[{validpins, tsk},
   WriteLine[$shellprocess, "gpio -g mode " <>  ToString@# <> " up"] & /@ validpins;
   ReadString[$shellprocess, EndOfBuffer];
 
+  oledText["Starting datalog task"];
+  Put[{Now, bmpRead[]}, $datafile];
+  $datatask = RunScheduledTask[PutAppend[{Now,bmpRead[]},$datafile],30];
+
   oledText["Starting interrupt task"]; 
   $task = RunScheduledTask[readpins[], 0.5];
   (* First interation of scheduled task does not capture pins.  Give it a few seconds then force another read *)
@@ -78,6 +83,8 @@ oledText[str_String, style_:Smaller] := Module[{img},
 oledCleanup[] := Module[{},
   RemoveScheduledTask[$task];
   $task = Null;
+  RemoveScheduledTask[$datatask];
+  $datatask = Null;
   KillProcess[$shellprocess];
   $shellprocess = Null;
   oledText["Goodbye !"];
@@ -97,7 +104,7 @@ oledLoop[] := Module[{iter},
     If[Total@$flags < 3,
       ( 
         If[$flags[[1]]==0,
-          oledText["Temp: " <> ToString@bmpRead[]["Temperature"],Large]];
+          oledText["Temp: " <> ToString@bmpRead[]["Temperature"]]];
         If[$flags[[2]]==0,
           oledText["Pressure: " <> ToString@bmpRead[]["Pressure"]]];
         If[$flags[[3]]==0,
