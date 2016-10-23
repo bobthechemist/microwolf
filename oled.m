@@ -4,6 +4,7 @@ oledSetup::usage="Initialize display, input pins and (eventually) python process
 oledImage::usage="Send properly formatted image to the display"
 oledText::usage="Sends a line of text to the display"
 oledPlot::usage="Plot directed to the oled"
+oledListPlot::usage="ListPlot directed to the oled"
 oledCleanup::usage="Attempts to kill processes and tasks"
 oledLoop::usage="The main program loop"
 oledRun::usage="Runs the three parts of the oled program"
@@ -23,6 +24,8 @@ $readpins = True;
 $shellprocess = Null;
 $task = Null;
 $datatask = Null;
+$currtime = Now;
+$currdisplay = 1;
 
 (* Read gpio pins and store in $flags *)
 
@@ -98,32 +101,41 @@ oledRun[] := Module[{},
 
 
 oledLoop[] := Module[{iter},
-  iter = 0;
   oledText["Starting loop"];
-  While[iter < 5,
+  While[True,
     If[Total@$flags < 3,
       ( 
         If[$flags[[1]]==0,
-          oledText["Temp: " <> ToString@bmpRead[]["Temperature"]]];
+          ($currdisplay = 1; updateDisplay[0];)];
         If[$flags[[2]]==0,
-          oledText["Pressure: " <> ToString@bmpRead[]["Pressure"]]];
+          ($currdisplay = 2; updateDisplay[0];)];
         If[$flags[[3]]==0,
-          Break];
-        iter += 1;
+          Break[]];
         $readpins = True;
       ),
-      Pause[1]
+      Pause[1]; updateDisplay[];
     ];
   ]
 ]
 
 
 oledPlot[fn_, {var_, varmin_, varmax_}, opts : OptionsPattern[Plot]]:= Module[{img, ticks},
-  img = Plot[fn,{var,varmin,varmax}, AspectRatio->0.25,ImageSize->{128,32},
+  img = Plot[fn,{var,varmin,varmax}, AspectRatio->0.15,ImageSize->{128,32},
     PlotStyle->{White,Thickness[0.01]}, FrameStyle->White, Background->Black,
-    BaseStyle->{White,FontFamily->"FreeSans",FontSize->7},
+    BaseStyle->{White,FontFamily->"Roboto",Bold,FontSize->8},
     Axes->False,Frame->{True,True,False,False}, 
     FrameTicks->{Automatic, (IntegerPart/@{#1, #2})&}];
+  oledImage@img;
+]
+
+oledListPlot[data_, opts : OptionsPattern[ListPlot]]:= Module[{img, ticks},
+  img = ListPlot[data, AspectRatio->0.15,ImageSize->{128,32},
+    PlotStyle->{White,Thickness[0.01]}, FrameStyle->White, Background->Black,
+    BaseStyle->{White,FontFamily->"Roboto",Bold,FontSize->8},
+    Axes->False,Frame->{True,True,False,False}, 
+    FrameTicks->{({{#1,DateString[#1,{"Hour",":","Minute"}]},
+      {#2,DateString[#2,{"Hour",":","Minute"}]}})&, 
+      ({{#1,Round[#1]},{#2,Round[#2]}})&}];
   oledImage@img;
 ]
 
@@ -132,5 +144,23 @@ bmpRead[] := Module[{a,t},
   t = ToExpression@StringSplit[t, ", "];
   Association[{"Temperature"->First@t,"Pressure"->Last@t}]
 ]
+
+updateDisplay[s_:60]:= Module[{},
+  (* Update display based on delay ($currtime) and which screen ($currdisplay) *)
+  If[Now > DatePlus[$currtime,{s,"Second"}],
+    (* Do something *)
+    $currtime = Now;
+    If[$currdisplay == 1,
+      (* Display Text *)
+      oledText@ToString@TableForm[
+        Normal@Last@Last@ReadList@$datafile/.Rule->List,TableSpacing->{0,4}];,
+      (* Display plot *)
+      oledListPlot[TimeSeries[{#[[1]],#[[2]]["Temperature"]}&/@ReadList[$datafile]]];],
+    (* Do nothing *)
+    Null
+    ]
+]
+    
 End[]
 EndPackage[]
+
